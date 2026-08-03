@@ -2141,9 +2141,19 @@ static void dataOfferHandleOffer(void* userData,
     }
 }
 
+static void dataOfferHandleSourceActions(void* userData, struct wl_data_offer* offer, uint32_t sourceActions) {
+
+}
+
+static void dataOfferHandleAction(void* userData, struct wl_data_offer* offer, uint32_t dndAction) {
+
+}
+
 static const struct wl_data_offer_listener dataOfferListener =
 {
-    dataOfferHandleOffer
+    dataOfferHandleOffer,
+    dataOfferHandleSourceActions,
+    dataOfferHandleAction
 };
 
 static void dataDeviceHandleDataOffer(void* userData,
@@ -2197,7 +2207,7 @@ static void dataDeviceHandleEnter(void* userData,
         _GLFWwindow* window = wl_surface_get_user_data(surface);
         if (window->wl.surface == surface)
         {
-            if (_glfw.wl.offers[i].text_uri_list)
+            if (window && surface == window->wl.surface && _glfw.wl.offers[i].text_uri_list)
             {
                 _glfw.wl.dragOffer = offer;
                 _glfw.wl.dragFocus = window;
@@ -2248,7 +2258,7 @@ static void dataDeviceHandleDrop(void* userData,
     {
         int count;
         char** paths = _glfwParseUriList(string, &count);
-        if (paths)
+        if (paths && _glfw.wl.dragFocus)
         {
             _glfwInputDrop(_glfw.wl.dragFocus, count, (const char**) paths);
 
