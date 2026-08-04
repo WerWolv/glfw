@@ -136,6 +136,7 @@ None.
  - [Cocoa] Removed support for OS X 10.10 Yosemite and earlier (#2506)
  - [Cocoa] Bugfix: Cmd+Period, Ctrl+Tab and Ctrl+Esc key events were not emitted
    (#1362,#2278)
+ - [Wayland]: Add support for dropping files when sandboxed
  - [Wayland] Bugfix: The fractional scaling related objects were not destroyed
  - [Wayland] Bugfix: `glfwInit` would segfault on compositor with no seat (#2517)
  - [Wayland] Bugfix: A drag entering a non-GLFW surface could cause a segfault
@@ -195,4 +196,3 @@ request, please file it in the
 
 Finally, if you're interested in helping out with the development of GLFW or
 porting it to your favorite platform, join us on the forum or GitHub.
-
