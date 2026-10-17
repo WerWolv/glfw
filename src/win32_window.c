@@ -36,6 +36,105 @@
 #include <windowsx.h>
 #include <shellapi.h>
 
+#ifndef SWP_STATECHANGED
+#define SWP_STATECHANGED 0x8000
+#endif
+
+
+/**
+* Retrieve the monitor and work area rectangles for the monitor nearest to the given source rectangle
+* while taking auto-hide app bars (includes taskbars) into account.
+* @param OutMonitorRect - Receives the monitor rectangle
+* @param OutAppBarSafeWorkAreaRect - Receives the work area rectangle adjusted for auto-hide app bars
+* @param SourceRect - The input rectangle used to locate the monitor to use, typically the window rect
+* @return true on success, false if the monitor info can't be retrieved
+*/
+bool GetMonitorRects(RECT *OutMonitorRect, RECT *OutAppBarSafeWorkAreaRect, const RECT SourceRect)
+{
+    MONITORINFO MonitorInfo =
+    {
+        sizeof(MONITORINFO)
+    };
+
+
+    HMONITOR Monitor = MonitorFromRect(&SourceRect, MONITOR_DEFAULTTONEAREST);
+
+    if (!GetMonitorInfoW(Monitor, &MonitorInfo))
+    {
+        return false;
+    }
+
+    *OutMonitorRect = MonitorInfo.rcMonitor;
+    RECT tmpWorkRect = MonitorInfo.rcWork;
+
+    APPBARDATA AppBarData =
+    {
+        sizeof(APPBARDATA)
+    };
+
+    if (SHAppBarMessage(ABM_GETTASKBARPOS, &AppBarData))
+    {
+        bool bHorizontalOverlap = false;
+        bool bVerticalOverlap = false;
+
+        if (AppBarData.rc.left >= MonitorInfo.rcMonitor.left &&
+            AppBarData.rc.left < MonitorInfo.rcMonitor.right)
+        {
+            bHorizontalOverlap = true;
+        } else if (AppBarData.rc.right >= MonitorInfo.rcMonitor.left &&
+            AppBarData.rc.right < MonitorInfo.rcMonitor.right)
+        {
+            bHorizontalOverlap = true;
+        }
+
+
+        if (AppBarData.rc.top >= MonitorInfo.rcMonitor.top &&
+            AppBarData.rc.top < MonitorInfo.rcMonitor.bottom)
+        {
+            bVerticalOverlap = true;
+        } else if (AppBarData.rc.bottom >= MonitorInfo.rcMonitor.top &&
+            AppBarData.rc.bottom < MonitorInfo.rcMonitor.bottom)
+        {
+            bVerticalOverlap = true;
+        }
+
+        if (bVerticalOverlap && bHorizontalOverlap)
+        {
+            AppBarData = (APPBARDATA) {
+                sizeof(APPBARDATA)
+            };
+
+            AppBarData.uEdge = ABE_BOTTOM;
+            if (IsWindow((HWND)SHAppBarMessage(ABM_GETAUTOHIDEBAR, &AppBarData)))
+            {
+                --tmpWorkRect.bottom;
+            }
+
+            AppBarData.uEdge = ABE_TOP;
+            if (IsWindow((HWND)SHAppBarMessage(ABM_GETAUTOHIDEBAR, &AppBarData)))
+            {
+                ++tmpWorkRect.top;
+            }
+
+
+            AppBarData.uEdge = ABE_LEFT;
+            if (IsWindow((HWND)SHAppBarMessage(ABM_GETAUTOHIDEBAR, &AppBarData)))
+            {
+                ++tmpWorkRect.left;
+            }
+
+            AppBarData.uEdge = ABE_RIGHT;
+            if (IsWindow((HWND)SHAppBarMessage(ABM_GETAUTOHIDEBAR, &AppBarData)))
+            {
+                --tmpWorkRect.right;
+            }
+        }
+    }
+
+    *OutAppBarSafeWorkAreaRect = tmpWorkRect;
+    return true;
+}
+
 // Returns the window style for the specified window
 //
 static DWORD getWindowStyle(const _GLFWwindow* window)
@@ -1015,6 +1114,46 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             else if (window->cursorMode == GLFW_CURSOR_CAPTURED)
                 captureCursor(window);
 
+            break;
+        }
+
+        case WM_WINDOWPOSCHANGING:
+        {
+            if (window->decorated)
+                break;
+
+            LPWINDOWPOS WindowPos = (LPWINDOWPOS)lParam;
+
+            if ((WindowPos->flags & SWP_STATECHANGED) != 0 && IsZoomed(window->win32.handle))
+            {
+
+                RECT WindowRect;
+                WindowRect.left = WindowPos->x;
+                WindowRect.right = WindowPos->x + WindowPos->cx;
+                WindowRect.top = WindowPos->y;
+                WindowRect.bottom = WindowPos->y + WindowPos->cy;
+
+                RECT AppBarSafeWorkAreaRect, MonitorRect;
+                if (!GetMonitorRects(&MonitorRect, &AppBarSafeWorkAreaRect, WindowRect))
+                    break;
+
+                // Update the size and position if the window rect contains the monitor rect
+                if (PtInRect(&WindowRect, (POINT) {MonitorRect.left, MonitorRect.top}) &&
+                    PtInRect(&WindowRect, (POINT) {MonitorRect.right - 1, MonitorRect.bottom - 1}))
+                {
+                    // This style change prevents Windows from modifying the position and size
+                    LONG Style = GetWindowLongW(window->win32.handle, GWL_STYLE);
+                    Style &= ~WS_BORDER;
+                    SetWindowLongW(window->win32.handle, GWL_STYLE, Style);
+
+                    WindowPos->x = AppBarSafeWorkAreaRect.left;
+                    WindowPos->y = AppBarSafeWorkAreaRect.top;
+
+                    WindowPos->cx = AppBarSafeWorkAreaRect.right - AppBarSafeWorkAreaRect.left;
+                    WindowPos->cy = AppBarSafeWorkAreaRect.bottom - AppBarSafeWorkAreaRect.top;
+                    return 0;
+                }
+            }
             break;
         }
 
